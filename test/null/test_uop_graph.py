@@ -812,5 +812,58 @@ class TestUOpTags(unittest.TestCase):
     g = graph_rewrite(g, pm_plus_1)
     assert g.ssimplify() == 6
 
+class TestToposort(unittest.TestCase):
+  def test_single_node(self):
+    c = UOp.const(dtypes.int, 42)
+    result = c.toposort()
+    self.assertEqual(list(result.keys()), [c])
+
+  def test_chain_order(self):
+    a = UOp.const(dtypes.int, 1)
+    b = UOp(Ops.ADD, dtypes.int, (a, UOp.const(dtypes.int, 2)))
+    c = UOp(Ops.ADD, dtypes.int, (b, UOp.const(dtypes.int, 3)))
+    result = c.toposort()
+    keys = list(result.keys())
+    # every src must appear before its consumer
+    for node in keys:
+      for s in node.src:
+        if s in result: self.assertLess(keys.index(s), keys.index(node))
+
+  def test_diamond_completeness(self):
+    a = UOp.const(dtypes.int, 1)
+    b = UOp.const(dtypes.int, 2)
+    mid = UOp(Ops.ADD, dtypes.int, (a, b))
+    left = UOp(Ops.ADD, dtypes.int, (mid, a))
+    right = UOp(Ops.ADD, dtypes.int, (mid, b))
+    root = UOp(Ops.ADD, dtypes.int, (left, right))
+    result = root.toposort()
+    for node in [a, b, mid, left, right, root]:
+      self.assertIn(node, result)
+    # topological validity
+    keys = list(result.keys())
+    for node in keys:
+      for s in node.src:
+        if s in result: self.assertLess(keys.index(s), keys.index(node))
+
+  def test_gate_excludes_nodes(self):
+    a = UOp.const(dtypes.int, 1)
+    b = UOp(Ops.ADD, dtypes.int, (a, UOp.const(dtypes.int, 2)))
+    c = UOp(Ops.ADD, dtypes.int, (b, UOp.const(dtypes.int, 3)))
+    result = c.toposort(gate=lambda n: n.op != Ops.CONST)
+    for node in result:
+      self.assertNotEqual(node.op, Ops.CONST)
+
+  def test_topological_validity(self):
+    a = UOp.const(dtypes.int, 1)
+    b = UOp.const(dtypes.int, 2)
+    c = UOp(Ops.ADD, dtypes.int, (a, b))
+    d = UOp(Ops.ADD, dtypes.int, (a, c))
+    e = UOp(Ops.ADD, dtypes.int, (c, d))
+    result = e.toposort()
+    keys = list(result.keys())
+    for node in keys:
+      for s in node.src:
+        if s in result: self.assertLess(keys.index(s), keys.index(node))
+
 if __name__ == '__main__':
   unittest.main(verbosity=2)

@@ -165,27 +165,34 @@ class UOp(OpMixin, metaclass=UOpMetaClass):
 
   def toposort(self, gate:Callable|None=None) -> dict[UOp, None]:
     cache: dict[UOp, None] = {}
-    stack: list[tuple[UOp, bool]] = [(self, False)] # each stack entry is (node, visited_flag)
+    visited: set[UOp] = set()
+    stack: list[UOp] = [self]
     while stack:
-      node, visited = stack.pop()
-      if node in cache: continue
-      if not visited:
-        if gate is None or gate(node):
-          stack.append((node, True))  # push node back on stack to process after its srcs
-          for s in reversed(node.src): stack.append((s, False)) # push srcs on the stack
-      else: cache[node] = None # second time i'm seeing this node, add it to returned toposort
+      node = stack.pop()
+      if node in visited:
+        cache[node] = None
+        continue
+      visited.add(node)
+      if gate is not None and not gate(node): continue
+      stack.append(node)
+      for s in reversed(node.src):
+        if s not in visited: stack.append(s)
     return cache
 
   def topovisit(self, visitor:Callable[[UOp], T], cache:dict[UOp, T]) -> T:
     # NOTE: this shares a lot of code with toposort
-    stack: list[tuple[UOp, bool]] = [(self, False)]
+    visited: set[UOp] = set()
+    stack: list[UOp] = [self]
     while stack:
-      node, visited = stack.pop()
+      node = stack.pop()
       if node in cache: continue
-      if not visited:
-        stack.append((node, True))
-        for s in reversed(node.src): stack.append((s, False))
-      else: cache[node] = visitor(node)
+      if node in visited:
+        cache[node] = visitor(node)
+        continue
+      visited.add(node)
+      stack.append(node)
+      for s in reversed(node.src):
+        if s not in visited and s not in cache: stack.append(s)
     return cache[self]
 
   # returns map of UOps to their consumers in the graph rooted by self
